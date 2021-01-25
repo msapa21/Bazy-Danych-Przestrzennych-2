@@ -1,0 +1,40 @@
+UWAGA: korzystanie ze znaczników czasu nie działa w połączeniu z -O.
+Szczegóły w podręczniku.
+
+--2021-01-25 20:54:46--  http://home.agh.edu.pl/~wsarlej/dyd/bdp2/materialy/cw10/InternetSales_new.zip
+Translacja home.agh.edu.pl (home.agh.edu.pl)... 2001:6d8:10:1127::6242, 149.156.98.66
+Łączenie się z home.agh.edu.pl (home.agh.edu.pl)|2001:6d8:10:1127::6242|:80... połączono.
+Żądanie HTTP wysłano, oczekiwanie na odpowiedź... 200 OK
+Długość: 77835 (76K) [application/zip]
+Zapis do: `tempZippedFile.zip'
+
+     0K .......... .......... .......... .......... .......... 65% 1,21M 0s
+    50K .......... .......... ......                          100% 2,19M=0,05s
+
+2021-01-25 20:54:46 (1,43 MB/s) - zapisano `tempZippedFile.zip' [77835/77835]
+
+”20210125205446” WGET step - Successful
+Archive:  tempZippedFile.zip
+  inflating: InternetSales_new.txt   
+”20210125205446” Unzip step - Successful
+”20210125205446” First part of checking file - Successful
+”20210125205446” Compare file with old file - Successful
+”20210125205446” Getting wrong rows step - Fail
+”20210125205446” Removing secret code from wrong rows step - Successful
+”20210125205446” Change CustomerName to separate First and Second Names step - Successful
+”20210125205447” Change , to . step - Successful
+mysql: [Warning] Using a password on the command line interface can be insecure.
+”20210125205447” Create table in mysql step - Successful
+”20210125205447” Count original rows step - Successful
+”20210125205447” Count after cleaning rows step - Successful
+”20210125205447” Count duplicates step - Successful
+”20210125205447” Count wrong rows step - Successful
+mysql: [Warning] Using a password on the command line interface can be insecure.
+”20210125205447” Count load data to mysql table step - Successful
+mysql: [Warning] Using a password on the command line interface can be insecure.
+”20210125205448” Setting random SecretCode step - Successful
+mysql: [Warning] Using a password on the command line interface can be insecure.
+”20210125205448” Dump data to csv file step - Successful
+export.csv
+”20210125205448” Archiving step - Successful
+”20210125205449” Sending raport via mail step - Successful

@@ -1,0 +1,4 @@
+CREATE TABLE CUSTOMERS_290927 (ProductKey INT, CurrencyAlternateKey VARCHAR(3), FirstName VARCHAR(255), LastName VARCHAR(255), OrderDateKey VARCHAR(8),
+OrderQuantity INT, UnitPrice DECIMAL(18,2), SecretCode VARCHAR(10))
+
+SELECT * FROM CUSTOMERS_290927

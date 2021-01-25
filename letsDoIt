@@ -1,0 +1,183 @@
+#!/bin/bash
+# Skrypt do obsługi pliku (sprawdzania poprawnosci, usuwania i przenoszenia blednych danych, wysylania raportu oraz logowania dzialania)
+# Utworzony 23.01.2021 Autor Malgorzata Sapalska
+# Parametry:
+# $1 - adres skad pobierany plik
+# $2 - haslo do archiwum
+# $3 - pelna nazwa wypakowanego pliku
+# $4 - nazwa pliku z logami
+# $5 - timestamp
+# $6 - plik _old (porownanie danych i zostawienie tylko nowych)
+# $7 - numer indeksu
+# $8 - sql host
+# $9 - sql username
+# $10 - sql password (coded in base64)
+# $11 - adres maila na który wysylany raport
+
+TMPFILE="tempZippedFile.zip"
+mkdir -p PROCESSED
+LOG_FILENAME="PROCESSED/"$0"_"$5".log"
+DECODED_PASSWORD=$(echo ${10} | base64 --decode)
+wget -O $TMPFILE -N $1 2>> $LOG_FILENAME  #pobranie pliku z internetu
+if [ $? -eq 0 ]; then  #sprawdzenie czy się powiodło, odpowiednia odpowiedź idzie do logów
+    echo $(date +”%Y%m%d%H%M%S”) "WGET step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "WGET step - Fail" >> $LOG_FILENAME
+fi
+unzip -P $2 $TMPFILE 2>> $LOG_FILENAME >> $LOG_FILENAME # rozpakowanie pliku z hasłem
+if [ $? -eq 0 ]; then  #sprawdzenie czy się powiodło,
+    echo $(date +”%Y%m%d%H%M%S”) "Unzip step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Unzip step - Fail" >> $LOG_FILENAME
+fi
+rm $TMPFILE
+WRONG_DATA_FILENAME="InternetSales_new.bad$5" #plik do przechowywania odrzuconych danych
+TMPFILE2="newTempFile.txt"
+#ustawienie delimitera na '|', awk -F "|" 
+#Jeśli jest pierwszy wiersz to biorę z niego informację o ilości kolumn z nagłówka (do części: pozostaw wiersze, które mają ilość kolumn taką jak nagłówek pliku), NR==1{totalColumnsCount=NF; print $0}
+#od wiersza który nie jest już nagłówkiem, znajdź w kolumnie trzeciej indeks nagłówka, NR>1{p=index($3,",")
+#jeśli w kolumnie pierwszej coś jest to znaczy że wiersz nie jest pusty, if (length($1) != 0
+#i jeśli w aktualnie przetwarzanym wierszu ilość kolumn równa się ilości tej wcześniej zapisanej w zmiennej totalColumnsCount, totalColumnsCount == NF
+#i jeśli kolumna OrderQuantity posiada wartości mniejsze lub równe sto,  $5 <= 100
+#i jeśli nie ma wartości w kolumnie SecretCode 
+#i indeks z przecinkiem jest różny od zera
+# ==> to wypisz cały bieżący wiersz, length($7) == 0
+#pozostaw unikalne wiersze, sort -u 
+#te wyselekcjonowane wiersze właduj do pliku tymczasowego, 
+awk -F "|" 'NR==1{totalColumnsCount=NF; print $0} NR>1{p=index($3,","); if (length($1) != 0 && totalColumnsCount == NF && $5 <= 100 && length($7) == 0 && p != 0) print $0}' $3 | sort -u 2>> $LOG_FILENAME 1> $TMPFILE2
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "First part of checking file - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "First part of checking file - Fail" >> $LOG_FILENAME
+fi
+TMPFILE3="tempFile3.txt"
+grep -v -f $6 $TMPFILE2 2>> $LOG_FILENAME 1> $TMPFILE3  #porównuje dwa pliki, i w pliku przetworzonym zostawia te wiersze, które nie występują w pliku .old i przekierowuje do pliku tymczasowego.
+# Nie korzystałam z diff oraz sdiff dlatego, że otrzymany rezultat był inny od oczekiwanego. Dlatego użyłam grepa. Zapobiegło to dodatkowym linijkom kodu.
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Compare file with old file - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Compare file with old file - Fail" >> $LOG_FILENAME
+fi
+rm $TMPFILE2
+TMP_ORIGINAL_SORTED="originalSorted.txt"
+sort $3 > $TMP_ORIGINAL_SORTED #sortowanie danych z pliku oryginalnego
+WRONG_TEMP_FILE="wrongTempFile.txt"
+diff --changed-group-format='%<%>' --unchanged-group-format='' $TMP_ORIGINAL_SORTED $TMPFILE3 2>> $LOG_FILENAME 1> $WRONG_TEMP_FILE #porównuje plik oryginalny z plikiem przetworzonym i te linie które zostały usunięte idą do pliku tymczasowego .bad
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Getting wrong rows step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Getting wrong rows step - Fail" >> $LOG_FILENAME
+fi
+#ustawienie delimitera na "|"
+#jeśli gdzieś w odrzuconych liniach w kolumnie secret code byłą wartość to ją czyszczę
+awk -F "|" 'BEGIN{FS="|"}; {$0=$0;if (length($1) < 5 && length($7) > 0) {$7=""};print $0}' $WRONG_TEMP_FILE 2>> $LOG_FILENAME 1> $WRONG_DATA_FILENAME
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Removing secret code from wrong rows step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Removing secret code from wrong rows step - Fail" >> $LOG_FILENAME
+fi
+rm $WRONG_TEMP_FILE
+rm $TMP_ORIGINAL_SORTED
+GOOD_CONVERTED_FILE="goodConvertedFile.txt"
+#ustawiam delimiter na'|'
+#Powstaje dodatkowa kolumna: kolumna |CustomerName| gdzie było "Nazwisko, Imię" rozdziela się na |FirstName| i |LastName|
+# p posiada indeks przecinka. Imię zaczyna się od p+1 do długości -1, czyli znaku ", z jego wyłączeniem, p=index($3,",");firstName=substr($3,p+1,length(substr($3,p+1))-1)
+# nazwisko zaczyna się od numeru 2 do indeksu przecinka -2. (bo nie bierzemy pod uwagę znaku "), lastName=substr($3,2,p-2)
+#włożenie imienia i nazwiska w odpowiednie kolumny, print $1"|"$2"|"firstName"|"lastName"|"$4"|"$5"|"$6"|"$7}'
+#zapisanie do pliku tymczasowego
+awk -F "|" 'NR==1{print "ProductKey|CurrencyAlternateKey|FirstName|LastName|OrderDateKey|OrderQuantity|UnitPrice|SecretCode"} {p=index($3,",");firstName=substr($3,p+1,length(substr($3,p+1))-1); lastName=substr($3,2,p-2); print $1"|"$2"|"firstName"|"lastName"|"$4"|"$5"|"$6"|"$7}' $TMPFILE3 2>> $LOG_FILENAME 1> $TMPFILE2
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Change CustomerName to separate First and Second Names step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Change CustomerName to separate First and Second Names step - Fail" >> $LOG_FILENAME
+fi
+rm $TMPFILE3
+#zamiana przecinków na kropki bo się nie dało załadować do bazy danych.
+awk -F "|" '{gsub(/,/,".")}{print}' $TMPFILE2 2>> $LOG_FILENAME 1> $GOOD_CONVERTED_FILE
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Change , to . step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Change , to . step - Fail" >> $LOG_FILENAME
+fi
+rm $TMPFILE2
+#stworzenie tabeli i załadowanie na bazę na agh. Ciężko było, dużo, dużo problemów...
+mysql -u $9 --local-infile -h $8 -p $9 -P 3306 --password=$DECODED_PASSWORD -Bse "USE "$9";CREATE TABLE CUSTOMERS_"$7" (ProductKey INT, CurrencyAlternateKey VARCHAR(3), FirstName VARCHAR(255), LastName VARCHAR(255), OrderDateKey VARCHAR(8), OrderQuantity INT, UnitPrice DECIMAL(18,2), SecretCode VARCHAR(10));LOAD DATA LOCAL INFILE '"$GOOD_CONVERTED_FILE"' INTO TABLE CUSTOMERS_"$7" COLUMNS TERMINATED BY '|' IGNORE 1 LINES;" 2>> $LOG_FILENAME
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Create table in mysql step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Create table in mysql step - Fail" >> $LOG_FILENAME
+fi
+#przeniesienie przetworzonego pliku do podkatalogu processed
+mv $GOOD_CONVERTED_FILE PROCESSED/$5"_"$GOOD_CONVERTED_FILE 2>> $LOG_FILENAME
+
+#PRZYGOTOWANIE DO WYSŁANIA MAILA
+MESSAGE_FILE="message.txt"
+echo "liczba wierszy w pliku pobranym z internetu: " > $MESSAGE_FILE
+wc -l $3 | cut -d' ' -f1 2>> $LOG_FILENAME 1>> $MESSAGE_FILE # liczba wierszy w pliku pobranym z internetu
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Count original rows step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Count original rows step - Fail" >> $LOG_FILENAME
+fi
+echo "liczba poprawnych wierszy (po czyszczeniu): " >> $MESSAGE_FILE
+wc -l PROCESSED/$5"_"$GOOD_CONVERTED_FILE | cut -d' ' -f1 2>> $LOG_FILENAME 1>> $MESSAGE_FILE #liczba wierszy poprawnych po czyszczeniu
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Count after cleaning rows step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Count after cleaning rows step - Fail" >> $LOG_FILENAME
+fi
+echo "liczba duplikatów w pliku wejściowym: " >> $MESSAGE_FILE
+sort $3 | uniq -cd | awk '{count+=$1} END {print count}' 2>> $LOG_FILENAME 1>> $MESSAGE_FILE #liczba duplikatów w pliku wejściowym
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Count duplicates step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Count duplicates step - Fail" >> $LOG_FILENAME
+fi
+echo "ilość błędnych/odrzuconych wierszy: " >> $MESSAGE_FILE
+wc -l $WRONG_DATA_FILENAME | cut -d' ' -f1 2>> $LOG_FILENAME 1>> $MESSAGE_FILE #ilość błędnych/odrzuconych wierszy
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Count wrong rows step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Count wrong rows step - Fail" >> $LOG_FILENAME
+fi
+echo "ilość danych załadowanych do tabeli CUSTOMERS_"$7": ">> $MESSAGE_FILE
+mysql -u $9 -h $8 -p $9 -P 3306 --password=$DECODED_PASSWORD -Bse "USE "$9";SELECT COUNT(1) FROM CUSTOMERS_"$7";" 2>> $LOG_FILENAME 1>> $MESSAGE_FILE #ilość danych załadowanych do tabeli
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Count load data to mysql table step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Count load data to mysql table step - Fail" >> $LOG_FILENAME
+fi
+
+#rm $MESSAGE_FILE
+EXPORT_CSV_FILE="export.csv"
+#uruchomienie kwerendy SQL która zaktualizuje kolumnę SecretCode w tabeli losowym stringiem o długości 10
+mysql -u $9 -h $8 -p $9 -P 3306 --password=$DECODED_PASSWORD -Bse "USE "$9";UPDATE CUSTOMERS_"$7" SET SecretCode=substring(MD5(RAND()), 10);" 2>> $LOG_FILENAME
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Setting random SecretCode step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Setting random SecretCode step - Fail" >> $LOG_FILENAME
+fi
+#eksportowanie tabeli do pliku csv.
+#sed znaleziony na internetach, mysql i mysqldump dawaly errory "access denied" - podejrzewam problem z priviliges z serwera, jednak nie dalam rady tego przeskoczyc dlatego po poszukiwaniach stackOverflow znalazlam poniższe rozwiazanie :)
+mysql -u $9 -h $8 -p $9 -P 3306 --password=$DECODED_PASSWORD -Bse "SELECT * FROM CUSTOMERS_"$7";" 2>> $LOG_FILENAME | sed 's/\t/","/g;s/^/"/;s/$/"/;s/\n//g' 2>> $LOG_FILENAME 1> $EXPORT_CSV_FILE
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Dump data to csv file step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Dump data to csv file step - Fail" >> $LOG_FILENAME
+fi
+#kompresowanie pliku csv
+tar -cvzf table.tar.gz $EXPORT_CSV_FILE 2>> $LOG_FILENAME >> $LOG_FILENAME
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Archiving step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Archiving step - Fail" >> $LOG_FILENAME
+fi
+#wysłanie maila do adresata razem z raportem
+mail -a table.tar.gz -s "CUSTOMERS LOAD - "$5 ${11} < $MESSAGE_FILE 2>> $LOG_FILENAME
+if [ $? -eq 0 ]; then
+    echo $(date +”%Y%m%d%H%M%S”) "Sending raport via mail step - Successful" >> $LOG_FILENAME
+else
+    echo $(date +”%Y%m%d%H%M%S”) "Sending raport via mail step - Fail" >> $LOG_FILENAME
+fi
+rm $MESSAGE_FILE
+#trudne te ćwiczenia. 

@@ -1,0 +1,3 @@
+bcp AdventureWorksDW2019.dbo.CUSTOMERS_290927 format nul -T -f C:\Users\msapa\Desktop\STUDIA\SEMESTR_2_MAGISTERKA\Bazy_Danych_przestrzennych_2\ćwiczenia10\abc.fmt -t, -c 
+
+bcp AdventureWorksDW2019.dbo.CUSTOMERS_290927 IN C:\Users\msapa\Desktop\STUDIA\SEMESTR_2_MAGISTERKA\Bazy_Danych_przestrzennych_2\ćwiczenia10\export.csv -f C:\Users\msapa\Desktop\STUDIA\SEMESTR_2_MAGISTERKA\Bazy_Danych_przestrzennych_2\ćwiczenia10\abc.fmt -T -t"," 
